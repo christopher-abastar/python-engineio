@@ -158,8 +158,7 @@ class Server(object):
             socket = self._get_socket(sid)
         except KeyError:
             # the socket is not available
-            self.logger.warning('Cannot send to sid %s', sid)
-            return
+            raise KeyError('Cannot send to sid %s', sid)
         socket.send(packet.Packet(packet.MESSAGE, data=data, binary=binary))
 
     def disconnect(self, sid=None):
