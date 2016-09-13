@@ -46,7 +46,7 @@ class Socket(object):
             self.send(packet.Packet(packet.PONG, pkt.data))
         elif pkt.packet_type == packet.MESSAGE:
             self.server._trigger_event('message', self.sid, pkt.data,
-                                       async=True)
+                                       async=self.server.async_handlers)
         elif pkt.packet_type == packet.UPGRADE:
             self.send(packet.Packet(packet.NOOP))
         else:
@@ -98,12 +98,13 @@ class Socket(object):
 
     def close(self, wait=True, abort=False):
         """Close the socket connection."""
-        self.server._trigger_event('disconnect', self.sid, async=False)
-        if not abort:
-            self.send(packet.Packet(packet.CLOSE))
-        self.closed = True
-        if wait:
-            self.queue.join()
+        if not self.closed:
+            self.server._trigger_event('disconnect', self.sid, async=False)
+            if not abort:
+                self.send(packet.Packet(packet.CLOSE))
+            self.closed = True
+            if wait:
+                self.queue.join()
 
     def _upgrade_websocket(self, environ, start_response):
         """Upgrade the connection from polling to websocket."""
@@ -130,7 +131,7 @@ class Socket(object):
                                         always_bytes=False):
                 self.server.logger.info(
                     '%s: Failed websocket upgrade, no PING packet', self.sid)
-                return
+                return []
             ws.send(packet.Packet(
                 packet.PONG,
                 data=six.text_type('probe')).encode(always_bytes=False))
@@ -144,24 +145,27 @@ class Socket(object):
                     ('%s: Failed websocket upgrade, expected UPGRADE packet, '
                      'received %s instead.'),
                     self.sid, pkt)
-                return
+                return []
             self.upgraded = True
         else:
             self.connected = True
             self.upgraded = True
 
+        # start separate writer thread
         def writer():
             while True:
                 try:
                     packets = self.poll()
                 except IOError:
                     break
+                if not packets:
+                    # empty packet list returned -> connection closed
+                    break
                 try:
                     for pkt in packets:
                         ws.send(pkt.encode(always_bytes=False))
                 except:
                     break
-
         self.server.start_background_task(writer)
 
         self.server.logger.info(
@@ -173,6 +177,7 @@ class Socket(object):
             except:
                 break
             if p is None:
+                # connection closed by client
                 break
             if isinstance(p, six.text_type):  # pragma: no cover
                 p = p.encode('utf-8')
@@ -181,5 +186,8 @@ class Socket(object):
                 self.receive(pkt)
             except ValueError:
                 pass
+
         self.close(wait=True, abort=True)
         self.queue.put(None)  # unlock the writer task so that it can exit
+
+        return []

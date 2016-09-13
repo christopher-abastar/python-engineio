@@ -18,11 +18,14 @@ class Server(object):
     This class implements a fully compliant Engine.IO web server with support
     for websocket and long-polling transports.
 
-    :param async_mode: The library used for asynchronous operations. Valid
-                       options are "threading", "eventlet" and "gevent". If
-                       this argument is not given, "eventlet" is tried first,
-                       then "gevent", and finally "threading". The websocket
-                       transport is only supported in "eventlet" mode.
+    :param async_mode: The asynchronous model to use. See the Deployment
+                       section in the documentation for a description of the
+                       available options. Valid async modes are "threading",
+                       "eventlet", "gevent" and "gevent_uwsgi". If this
+                       argument is not given, "eventlet" is tried first, then
+                       "gevent_uwsgi", then "gevent", and finally "threading".
+                       The first async mode that has all its dependencies
+                       installed is then one that is chosen.
     :param ping_timeout: The time in seconds that the client waits for the
                          server to respond before disconnecting.
     :param ping_interval: The interval in seconds at which the client pings
@@ -47,6 +50,9 @@ class Server(object):
                  packets. Custom json modules must have ``dumps`` and ``loads``
                  functions that are compatible with the standard library
                  versions.
+    :param async_handlers: If set to ``True``, run message event handlers in
+                           non-blocking threads. To run handlers synchronously,
+                           set to ``False``. The default is ``True``.
     :param kwargs: Reserved for future extensions, any additional parameters
                    given as keyword arguments will be silently ignored.
     """
@@ -57,7 +63,8 @@ class Server(object):
                  max_http_buffer_size=100000000, allow_upgrades=True,
                  http_compression=True, compression_threshold=1024,
                  cookie='io', cors_allowed_origins=None,
-                 cors_credentials=True, logger=False, json=None, **kwargs):
+                 cors_credentials=True, logger=False, json=None,
+                 async_handlers=True, **kwargs):
         self.ping_timeout = ping_timeout
         self.ping_interval = ping_interval
         self.max_http_buffer_size = max_http_buffer_size
@@ -67,6 +74,7 @@ class Server(object):
         self.cookie = cookie
         self.cors_allowed_origins = cors_allowed_origins
         self.cors_credentials = cors_credentials
+        self.async_handlers = async_handlers
         self.sockets = {}
         self.handlers = {}
         if json is not None:
@@ -83,7 +91,7 @@ class Server(object):
                     self.logger.setLevel(logging.ERROR)
                 self.logger.addHandler(logging.StreamHandler())
         if async_mode is None:
-            modes = ['eventlet', 'gevent', 'threading']
+            modes = ['eventlet', 'gevent_uwsgi', 'gevent', 'threading']
         else:
             modes = [async_mode]
         self.async = None
