@@ -45,6 +45,7 @@ class Socket(object):
             self.last_ping = time.time()
             self.send(packet.Packet(packet.PONG, pkt.data))
         elif pkt.packet_type == packet.MESSAGE:
+            self.last_ping = time.time()
             self.server._trigger_event('message', self.sid, pkt.data,
                                        async=self.server.async_handlers)
         elif pkt.packet_type == packet.UPGRADE:
